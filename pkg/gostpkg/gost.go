@@ -6,16 +6,16 @@ import (
 
 	"github.com/go-gost/core/chain"
 	"github.com/go-gost/core/hop"
-	"github.com/go-gost/x/connector/socks/v5"
-	"github.com/go-gost/x/handler/socks/v5"
+	socks5c "github.com/go-gost/x/connector/socks/v5"
+	socks5h "github.com/go-gost/x/handler/socks/v5"
 	"github.com/go-gost/x/listener/tcp"
 )
 
 // StartSocks5Chain 启动 socks5+chain 代理服务
 func StartSocks5Chain(listenAddr, remoteAddr, username, password string) error {
 	// 创建 socks5 v5 connector
-	conn := socks5.NewConnector(
-		socks5.AuthOption(username, password),
+	conn := socks5c.NewConnector(
+		socks5c.AuthOption(username, password),
 	)
 
 	// 组装 chain
