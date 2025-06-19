@@ -15,26 +15,42 @@ func StartSocks5Chain(listenAddr, remoteAddr, username, password string) error {
 	// 创建 socks5 connector
 	conn := socks5c.NewConnector()
 
+	// 组装 node
+	n := &chain.Node{
+		Addr:      remoteAddr,
+		Connector: conn,
+		Auth: &chain.Auth{
+			Username: username,
+			Password: password,
+		},
+	}
+	// 组装 hop
+	h := &chain.Hop{
+		Nodes: []*chain.Node{n},
+	}
 	// 组装 chain
-	n := chain.NewNode(remoteAddr, chain.WithAuth(username, password), chain.WithConnector(conn))
-	h := chain.NewHop(n)
-	c := chain.NewChain(h)
+	c := &chain.Chain{
+		Hops: []*chain.Hop{h},
+	}
 
-	// 创建 socks5 handler（本地认证）
-	hdl := socks5h.NewHandler(
-		socks5h.WithAuth(username, password),
-		socks5h.WithChain(c),
-	)
+	// 创建 socks5 handler
+	hdl := socks5h.NewHandler(&socks5h.Config{
+		Auth: &socks5h.Auth{
+			Username: username,
+			Password: password,
+		},
+		Chain: c,
+	})
 
 	// 创建 TCP listener
-	ln, err := tcp.NewListener(context.Background(), listenAddr)
+	ln, err := tcp.NewListener(listenAddr)
 	if err != nil {
 		return err
 	}
 
 	// 启动服务
 	go func() {
-		if err := hdl.Serve(context.Background(), ln); err != nil {
+		if err := hdl.Serve(ln); err != nil {
 			log.Fatalf("socks5 服务启动失败: %v", err)
 		}
 	}()
