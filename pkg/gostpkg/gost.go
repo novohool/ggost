@@ -157,7 +157,7 @@ func BuildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 					}
 				}
 				
-				d = mwss.NewDialer(opts...)
+				d = mws.NewDialer(opts...)
 			default:
 				d = tcp.NewDialer() // 默认使用 tcp
 			}
