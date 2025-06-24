@@ -19,8 +19,7 @@ import (
 	httpc "github.com/go-gost/x/connector/http"
 	"github.com/go-gost/x/dialer/tcp"
 	"github.com/go-gost/x/dialer/ws"
-	"github.com/go-gost/x/dialer/wss"
-	"github.com/go-gost/x/dialer/mws"  // 添加 mwss 支持
+	"github.com/go-gost/x/dialer/mws" 
 	socks5h "github.com/go-gost/x/handler/socks/v5"
 	httph "github.com/go-gost/x/handler/http"
 	tcpln "github.com/go-gost/x/listener/tcp"
