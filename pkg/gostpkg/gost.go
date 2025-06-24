@@ -134,7 +134,7 @@ func BuildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 				if path := getStringFromInterface(nodeCfg.Dialer.Metadata["path"]); path != "" {
 					opts = append(opts, dialer.PathOption(path))
 				}
-				d = wss.NewDialer(opts...)
+				d = ws.NewDialer(opts...)
 			case "mwss":
 				// Multiplex WebSocket Secure 拨号器
 				opts := []dialer.Option{}
