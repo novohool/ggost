@@ -20,6 +20,7 @@ import (
 	"github.com/go-gost/x/dialer/tcp"
 	"github.com/go-gost/x/dialer/ws"
 	"github.com/go-gost/x/dialer/wss"
+	"github.com/go-gost/x/dialer/mwss"  // 添加 mwss 支持
 	socks5h "github.com/go-gost/x/handler/socks/v5"
 	httph "github.com/go-gost/x/handler/http"
 	tcpln "github.com/go-gost/x/listener/tcp"
@@ -37,8 +38,8 @@ type NodeConfig struct {
 		} `yaml:"auth"`
 	} `yaml:"connector"`
 	Dialer struct {
-		Type     string            `yaml:"type"`
-		Metadata map[string]string `yaml:"metadata"`
+		Type     string                 `yaml:"type"`
+		Metadata map[string]interface{} `yaml:"metadata"` // 改为 interface{} 支持更复杂的结构
 	} `yaml:"dialer"`
 }
 
@@ -79,6 +80,14 @@ type Config struct {
 	Chains   []ChainConfig   `yaml:"chains"`
 }
 
+// getStringFromInterface 从 interface{} 中获取字符串值
+func getStringFromInterface(value interface{}) string {
+	if str, ok := value.(string); ok {
+		return str
+	}
+	return ""
+}
+
 // BuildChain 构建代理链
 func BuildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 	var hops []*hop.Hop
@@ -110,35 +119,46 @@ func BuildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 			case "ws":
 				// WebSocket 拨号器
 				opts := []dialer.Option{}
-				if host := nodeCfg.Dialer.Metadata["host"]; host != "" {
+				if host := getStringFromInterface(nodeCfg.Dialer.Metadata["host"]); host != "" {
 					opts = append(opts, dialer.HostOption(host))
 				}
-				if path := nodeCfg.Dialer.Metadata["path"]; path != "" {
+				if path := getStringFromInterface(nodeCfg.Dialer.Metadata["path"]); path != "" {
 					opts = append(opts, dialer.PathOption(path))
 				}
 				d = ws.NewDialer(opts...)
 			case "wss":
 				// WebSocket Secure 拨号器
 				opts := []dialer.Option{}
-				if host := nodeCfg.Dialer.Metadata["host"]; host != "" {
+				if host := getStringFromInterface(nodeCfg.Dialer.Metadata["host"]); host != "" {
 					opts = append(opts, dialer.HostOption(host))
 				}
-				if path := nodeCfg.Dialer.Metadata["path"]; path != "" {
+				if path := getStringFromInterface(nodeCfg.Dialer.Metadata["path"]); path != "" {
 					opts = append(opts, dialer.PathOption(path))
 				}
 				d = wss.NewDialer(opts...)
 			case "mwss":
-				// Multiplex WebSocket Secure (通常是 wss 的别名或扩展)
-				// 如果 go-gost 有专门的 mwss 拨号器，需要导入相应的包
-				// 这里先用 wss 作为替代
+				// Multiplex WebSocket Secure 拨号器
 				opts := []dialer.Option{}
-				if host := nodeCfg.Dialer.Metadata["host"]; host != "" {
+				if host := getStringFromInterface(nodeCfg.Dialer.Metadata["host"]); host != "" {
 					opts = append(opts, dialer.HostOption(host))
 				}
-				if path := nodeCfg.Dialer.Metadata["path"]; path != "" {
+				if path := getStringFromInterface(nodeCfg.Dialer.Metadata["path"]); path != "" {
 					opts = append(opts, dialer.PathOption(path))
 				}
-				d = wss.NewDialer(opts...)
+				
+				// 处理 header 字段
+				if headerValue, exists := nodeCfg.Dialer.Metadata["header"]; exists {
+					if headerMap, ok := headerValue.(map[string]interface{}); ok {
+						header := make(map[string]string)
+						for k, v := range headerMap {
+							header[k] = getStringFromInterface(v)
+						}
+						// 如果 go-gost 支持 header 选项，可以这样添加
+						// opts = append(opts, dialer.HeaderOption(header))
+					}
+				}
+				
+				d = mwss.NewDialer(opts...)
 			default:
 				d = tcp.NewDialer() // 默认使用 tcp
 			}
