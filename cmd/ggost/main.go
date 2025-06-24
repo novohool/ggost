@@ -27,8 +27,8 @@ type NodeConfig struct {
 		} `yaml:"auth"`
 	} `yaml:"connector"`
 	Dialer struct {
-		Type     string            `yaml:"type"`
-		Metadata map[string]string `yaml:"metadata"`
+		Type     string                 `yaml:"type"`
+		Metadata map[string]interface{} `yaml:"metadata"` // 改为 interface{} 支持更复杂的结构
 	} `yaml:"dialer"`
 }
 
@@ -88,6 +88,14 @@ func waitForPort(address string, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for gost to listen on %s", address)
 }
 
+// getStringFromInterface 从 interface{} 中获取字符串值
+func getStringFromInterface(value interface{}) string {
+	if str, ok := value.(string); ok {
+		return str
+	}
+	return ""
+}
+
 // buildChain 构建代理链
 func buildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 	// 转换为 gostpkg 中的类型
@@ -123,8 +131,8 @@ func buildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 					},
 				},
 				Dialer: struct {
-					Type     string            `yaml:"type"`
-					Metadata map[string]string `yaml:"metadata"`
+					Type     string                 `yaml:"type"`
+					Metadata map[string]interface{} `yaml:"metadata"`
 				}{
 					Type:     node.Dialer.Type,
 					Metadata: node.Dialer.Metadata,
