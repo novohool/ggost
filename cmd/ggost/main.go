@@ -1,3 +1,4 @@
+// cmd/ggost/main.go
 package main
 
 import (
@@ -16,6 +17,7 @@ import (
 )
 
 type NodeConfig struct {
+	Name      string `yaml:"name"`
 	Addr      string `yaml:"addr"`
 	Connector struct {
 		Type string `yaml:"type"`
@@ -31,6 +33,7 @@ type NodeConfig struct {
 }
 
 type HopConfig struct {
+	Name  string       `yaml:"name"`
 	Nodes []NodeConfig `yaml:"nodes"`
 }
 
@@ -95,11 +98,13 @@ func buildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 	
 	for i, hop := range chainCfg.Hops {
 		gostChainCfg.Hops[i] = gostpkg.HopConfig{
+			Name:  hop.Name,
 			Nodes: make([]gostpkg.NodeConfig, len(hop.Nodes)),
 		}
 		
 		for j, node := range hop.Nodes {
 			gostChainCfg.Hops[i].Nodes[j] = gostpkg.NodeConfig{
+				Name: node.Name,
 				Addr: node.Addr,
 				Connector: struct {
 					Type string `yaml:"type"`
@@ -184,7 +189,7 @@ func StartGostWithConfig(cfgFile string) error {
 
 func main() {
 	cfg := flag.String("C", "", "gost config file (yaml)")
-	waitAddr := flag.String("wait", "127.0.0.1:1080", "wait for gost to listen on this address")
+	waitAddr := flag.String("wait", "127.0.0.1:8080", "wait for gost to listen on this address")
 	flag.Parse()
 
 	if *cfg == "" {
@@ -215,7 +220,8 @@ func main() {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "ALL_PROXY=socks5h://127.0.0.1:1080")
+	// 根据服务配置设置代理环境变量
+	cmd.Env = append(os.Environ(), "HTTP_PROXY=http://127.0.0.1:8080", "HTTPS_PROXY=http://127.0.0.1:8080")
 
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "命令执行失败: %v\n", err)
