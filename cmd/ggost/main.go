@@ -90,6 +90,40 @@ func waitForPort(address string, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for gost to listen on %s", address)
 }
 
+func StartGostWithConfig(cfgFile string) error {
+	// 读取并解析配置文件
+	data, err := ioutil.ReadFile(cfgFile)
+	if err != nil {
+		return fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	// 创建链映射
+	chains := make(map[string]*chain.Chain)
+	for _, chainCfg := range cfg.Chains {
+		c, err := buildChain(chainCfg)
+		if err != nil {
+			return fmt.Errorf("构建链 %s 失败: %v", chainCfg.Name, err)
+		}
+		chains[chainCfg.Name] = c
+	}
+
+	// 启动所有服务
+	for _, svcCfg := range cfg.Services {
+		if err := startService(svcCfg, chains); err != nil {
+			return fmt.Errorf("启动服务 %s 失败: %v", svcCfg.Name, err)
+		}
+		log.Printf("服务 %s 已启动，监听地址: %s", svcCfg.Name, svcCfg.Addr)
+	}
+
+	return nil
+}
+
+
 func main() {
 	cfg := flag.String("C", "", "gost config file (yaml)")
 	waitAddr := flag.String("wait", "127.0.0.1:1080", "wait for gost to listen on this address")
