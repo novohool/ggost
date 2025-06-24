@@ -18,12 +18,16 @@ import (
 	socks5c "github.com/go-gost/x/connector/socks/v5"
 	httpc "github.com/go-gost/x/connector/http"
 	"github.com/go-gost/x/dialer/tcp"
+	"github.com/go-gost/x/dialer/ws"
+	"github.com/go-gost/x/dialer/wss"
 	socks5h "github.com/go-gost/x/handler/socks/v5"
+	httph "github.com/go-gost/x/handler/http"
 	tcpln "github.com/go-gost/x/listener/tcp"
 )
 
 // NodeConfig 节点配置
 type NodeConfig struct {
+	Name      string `yaml:"name"`
 	Addr      string `yaml:"addr"`
 	Connector struct {
 		Type string `yaml:"type"`
@@ -40,6 +44,7 @@ type NodeConfig struct {
 
 // HopConfig 跳跃配置
 type HopConfig struct {
+	Name  string       `yaml:"name"`
 	Nodes []NodeConfig `yaml:"nodes"`
 }
 
@@ -83,7 +88,7 @@ func BuildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 		
 		for _, nodeCfg := range hopCfg.Nodes {
 			// 创建节点
-			node := chain.NewNode(nodeCfg.Addr, nodeCfg.Addr)
+			node := chain.NewNode(nodeCfg.Name, nodeCfg.Addr)
 			
 			// 设置连接器
 			var conn connector.Connector
@@ -98,11 +103,48 @@ func BuildChain(chainCfg ChainConfig) (*chain.Chain, error) {
 			
 			// 设置拨号器
 			var d dialer.Dialer
+			var err error
 			switch nodeCfg.Dialer.Type {
 			case "tcp":
 				d = tcp.NewDialer()
+			case "ws":
+				// WebSocket 拨号器
+				opts := []dialer.Option{}
+				if host := nodeCfg.Dialer.Metadata["host"]; host != "" {
+					opts = append(opts, dialer.HostOption(host))
+				}
+				if path := nodeCfg.Dialer.Metadata["path"]; path != "" {
+					opts = append(opts, dialer.PathOption(path))
+				}
+				d = ws.NewDialer(opts...)
+			case "wss":
+				// WebSocket Secure 拨号器
+				opts := []dialer.Option{}
+				if host := nodeCfg.Dialer.Metadata["host"]; host != "" {
+					opts = append(opts, dialer.HostOption(host))
+				}
+				if path := nodeCfg.Dialer.Metadata["path"]; path != "" {
+					opts = append(opts, dialer.PathOption(path))
+				}
+				d = wss.NewDialer(opts...)
+			case "mwss":
+				// Multiplex WebSocket Secure (通常是 wss 的别名或扩展)
+				// 如果 go-gost 有专门的 mwss 拨号器，需要导入相应的包
+				// 这里先用 wss 作为替代
+				opts := []dialer.Option{}
+				if host := nodeCfg.Dialer.Metadata["host"]; host != "" {
+					opts = append(opts, dialer.HostOption(host))
+				}
+				if path := nodeCfg.Dialer.Metadata["path"]; path != "" {
+					opts = append(opts, dialer.PathOption(path))
+				}
+				d = wss.NewDialer(opts...)
 			default:
 				d = tcp.NewDialer() // 默认使用 tcp
+			}
+			
+			if err != nil {
+				return nil, fmt.Errorf("创建拨号器失败: %v", err)
 			}
 			
 			// 设置认证
@@ -167,15 +209,26 @@ func StartService(svcCfg ServiceConfig, chains map[string]*chain.Chain) error {
 		}
 		
 		hdl = socks5h.NewHandler(opts...)
+	case "http":
+		opts := []handler.Option{}
+		
+		// 如果指定了链，则使用链
+		if svcCfg.Handler.Chain != "" {
+			if c, exists := chains[svcCfg.Handler.Chain]; exists && c != nil {
+				opts = append(opts, handler.RouterOption(c))
+			}
+		}
+		
+		hdl = httph.NewHandler(opts...)
 	default:
-		// 默认使用 socks5
+		// 默认使用 http
 		opts := []handler.Option{}
 		if svcCfg.Handler.Chain != "" {
 			if c, exists := chains[svcCfg.Handler.Chain]; exists && c != nil {
 				opts = append(opts, handler.RouterOption(c))
 			}
 		}
-		hdl = socks5h.NewHandler(opts...)
+		hdl = httph.NewHandler(opts...)
 	}
 	
 	// 创建服务
@@ -194,11 +247,60 @@ func StartService(svcCfg ServiceConfig, chains map[string]*chain.Chain) error {
 // StartGostWithConfig 使用配置启动 GOST
 func StartGostWithConfig(cfgFile string) error {
 	// 这个函数现在移到 main.go 中实现
-	// 这里保留一个简单的 SOCKS5 启动函数作为备用
-	return StartSocks5Chain("127.0.0.1:1080", "", "", "")
+	// 这里保留一个简单的 HTTP 启动函数作为备用
+	return StartHttpChain("127.0.0.1:8080", "", "", "")
 }
 
-// StartSocks5Chain 启动 socks5+chain 代理服务（go-gost v3 正确用法）
+// StartHttpChain 启动 HTTP+chain 代理服务
+func StartHttpChain(listenAddr, remoteAddr, username, password string) error {
+	// 创建监听器
+	ln, err := tcpln.NewListener(listenAddr)
+	if err != nil {
+		return fmt.Errorf("创建监听器失败: %v", err)
+	}
+	
+	// 创建处理器选项
+	opts := []handler.Option{}
+	
+	// 如果有远程地址，创建链
+	if remoteAddr != "" {
+		// 创建节点
+		node := chain.NewNode("proxy", remoteAddr)
+		
+		// 设置认证
+		if username != "" {
+			node = node.WithAuth(auth.NewAuth(
+				auth.UserAuthOption(url.UserPassword(username, password)),
+			))
+		}
+		
+		// 设置连接器和拨号器
+		node = node.WithConnector(socks5c.NewConnector()).WithDialer(tcp.NewDialer())
+		
+		// 创建跳跃和链
+		h := hop.NewHop(hop.NodesOption(node))
+		c := chain.NewChain(chain.HopsOption(h))
+		
+		opts = append(opts, handler.RouterOption(c))
+	}
+	
+	// 创建 HTTP 处理器
+	hdl := httph.NewHandler(opts...)
+	
+	// 创建服务
+	svc := service.NewService("http", ln, hdl)
+	
+	// 启动服务
+	go func() {
+		if err := svc.Serve(); err != nil {
+			log.Printf("HTTP 服务运行出错: %v", err)
+		}
+	}()
+	
+	return nil
+}
+
+// StartSocks5Chain 启动 socks5+chain 代理服务（保持向后兼容）
 func StartSocks5Chain(listenAddr, remoteAddr, username, password string) error {
 	// 创建监听器
 	ln, err := tcpln.NewListener(listenAddr)
