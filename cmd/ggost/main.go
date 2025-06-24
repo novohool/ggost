@@ -9,14 +9,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/go-gost/core/chain"
-	"github.com/go-gost/core/hop"
-	"github.com/go-gost/core/listener"
-	socks5h "github.com/go-gost/x/handler/socks/v5"
-	"github.com/go-gost/x/listener/tcp"
 	"github.com/novohool/ggost/pkg/gostpkg"
 )
 
@@ -90,6 +85,70 @@ func waitForPort(address string, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for gost to listen on %s", address)
 }
 
+// buildChain 构建代理链
+func buildChain(chainCfg ChainConfig) (*chain.Chain, error) {
+	// 转换为 gostpkg 中的类型
+	gostChainCfg := gostpkg.ChainConfig{
+		Name: chainCfg.Name,
+		Hops: make([]gostpkg.HopConfig, len(chainCfg.Hops)),
+	}
+	
+	for i, hop := range chainCfg.Hops {
+		gostChainCfg.Hops[i] = gostpkg.HopConfig{
+			Nodes: make([]gostpkg.NodeConfig, len(hop.Nodes)),
+		}
+		
+		for j, node := range hop.Nodes {
+			gostChainCfg.Hops[i].Nodes[j] = gostpkg.NodeConfig{
+				Addr: node.Addr,
+				Connector: struct {
+					Type string `yaml:"type"`
+					Auth struct {
+						Username string `yaml:"username"`
+						Password string `yaml:"password"`
+					} `yaml:"auth"`
+				}{
+					Type: node.Connector.Type,
+					Auth: struct {
+						Username string `yaml:"username"`
+						Password string `yaml:"password"`
+					}{
+						Username: node.Connector.Auth.Username,
+						Password: node.Connector.Auth.Password,
+					},
+				},
+				Dialer: struct {
+					Type     string            `yaml:"type"`
+					Metadata map[string]string `yaml:"metadata"`
+				}{
+					Type:     node.Dialer.Type,
+					Metadata: node.Dialer.Metadata,
+				},
+			}
+		}
+	}
+	
+	return gostpkg.BuildChain(gostChainCfg)
+}
+
+// startService 启动服务
+func startService(svcCfg ServiceConfig, chains map[string]*chain.Chain) error {
+	// 转换为 gostpkg 中的类型
+	gostSvcCfg := gostpkg.ServiceConfig{
+		Name: svcCfg.Name,
+		Addr: svcCfg.Addr,
+		Handler: gostpkg.HandlerConfig{
+			Type:  svcCfg.Handler.Type,
+			Chain: svcCfg.Handler.Chain,
+		},
+		Listener: gostpkg.ListenerConfig{
+			Type: svcCfg.Listener.Type,
+		},
+	}
+	
+	return gostpkg.StartService(gostSvcCfg, chains)
+}
+
 func StartGostWithConfig(cfgFile string) error {
 	// 读取并解析配置文件
 	data, err := ioutil.ReadFile(cfgFile)
@@ -123,7 +182,6 @@ func StartGostWithConfig(cfgFile string) error {
 	return nil
 }
 
-
 func main() {
 	cfg := flag.String("C", "", "gost config file (yaml)")
 	waitAddr := flag.String("wait", "127.0.0.1:1080", "wait for gost to listen on this address")
@@ -135,7 +193,7 @@ func main() {
 
 	go func() {
 		log.Printf("正在启动 gost，配置文件: %s\n", *cfg)
-		if err := gostpkg.StartGostWithConfig(*cfg); err != nil {
+		if err := StartGostWithConfig(*cfg); err != nil {
 			log.Fatalf("gost 启动失败: %v", err)
 		}
 	}()
